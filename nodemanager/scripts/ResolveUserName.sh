@@ -38,6 +38,7 @@ userName="$2"
 composedUserName="$userName"
 
 ## To verify if composedUserName exists, comment out these lines if 
+## performance is the first priority or it's in non AD integrated environment. 
 ## Be sure you do compose in the right way.
 maxRetry=3
 while [ $maxRetry -gt 0 ]

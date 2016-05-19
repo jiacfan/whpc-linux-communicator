@@ -53,9 +53,16 @@ json::value RemoteExecutor::StartJobAndTask(StartJobAndTaskArgs&& args, const st
         // If username is empty, this is the old image, we use root.
         if (!isAdmin && !args.UserName.empty())
         {
+            int ret = 0;
 			
+            std::string userName;
+            if ((ret = System::ResolveUserName(args.UserName, userName)) != 0)
+            {
+                Logger::Info("Resolve user {0} failed with error code", args.UserName, ret);
 
-            int ret = System::CreateUser(userName, args.Password);
+                userName = String::GetUserName(args.UserName);
+            }
+
             ret = System::CreateUser(userName, args.Password);
 
             bool existed = ret == 9;
@@ -66,9 +73,24 @@ json::value RemoteExecutor::StartJobAndTask(StartJobAndTaskArgs&& args, const st
                     String::Join(" ", "Create user", userName, "failed with error code", ret));
             }
 
+            std::string userHomeDir;
+            if ((ret = System::GetHomeDir(userName, userHomeDir)) != 0)
+            {
+                throw std::runtime_error(
                     String::Join(" ", "Get home directory for user", userName, "failed with error code", ret));
+            }
 
-            bool authKeyAdded = privateKeyAdded && publicKeyAdded && (0 == System::AddAuthorizedKey(userName, args.PublicKey));
+            //Touch and create the home directory, in case it's in Active Directory envrionment where home dir may not exists.
+            std::string umask("0077");
+            if ((ret = System::TouchHomeDir(userName, umask)) != 0)
+            {
+                throw std::runtime_error(
+                    String::Join(" ", "Touch home directory for user", userName, "failed with error code", ret));
+            }
+
+            bool privateKeyAdded = 0 == System::AddSshKey(userName, userHomeDir, args.PrivateKey, "id_rsa");
+            bool publicKeyAdded = privateKeyAdded && (0 == System::AddSshKey(userName, userHomeDir, args.PublicKey, "id_rsa.pub"));
+
             bool authKeyAdded = privateKeyAdded && publicKeyAdded && (0 == System::AddAuthorizedKey(userHomeDir, args.PublicKey));
 
             if (authKeyAdded)
@@ -374,6 +396,7 @@ json::value RemoteExecutor::EndJob(hpc::arguments::EndJobArgs&& args)
                     Logger::Info(args.JobId, this->UnknowId, this->UnknowId,
                         "EndJob: RemoveAuthorizedKey {0}", userName);
 
+                    System::RemoveAuthorizedKey(userHomeDir, publicKey);
                 }
             }
         }
